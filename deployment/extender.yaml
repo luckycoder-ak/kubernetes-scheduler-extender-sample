@@ -1,0 +1,139 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: my-scheduler
+  namespace: kube-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: my-scheduler-cluster-admin
+  namespace: kube-system
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: cluster-admin
+subjects:
+  - kind: ServiceAccount
+    namespace: kube-system
+    name: my-scheduler
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: my-scheduler-config
+  namespace: kube-system
+data:
+  config.yaml: |
+    apiVersion: kubescheduler.config.k8s.io/v1alpha1
+    kind: KubeSchedulerConfiguration
+    schedulerName: my-scheduler
+    algorithmSource:
+      policy:
+        configMap:
+          namespace: kube-system
+          name: my-scheduler-policy
+    leaderElection:
+      leaderElect: true
+      lockObjectName: my-scheduler
+      lockObjectNamespace: kube-system
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: my-scheduler-policy
+  namespace: kube-system
+data:
+  policy.cfg : |
+    {
+      "kind" : "Policy",
+      "apiVersion" : "v1",
+      "predicates" : [
+        {"name" : "CheckNodeUnschedulable"},
+        {"name" : "GeneralPredicates"},
+        {"name" : "HostName"},
+        {"name" : "PodFitsHostPorts"},
+        {"name" : "MatchNodeSelector"},
+        {"name" : "PodFitsResources"},
+        {"name" : "NoDiskConflict"},
+        {"name" : "PodToleratesNodeTaints"},
+        {"name" : "MaxEBSVolumeCount"},
+        {"name" : "MaxGCEPDVolumeCount"},
+        {"name" : "MaxAzureDiskVolumeCount"},
+        {"name" : "CheckVolumeBinding"},
+        {"name" : "NoVolumeZoneConflict"},
+        {"name" : "MatchInterPodAffinity"}
+       ],
+       "priorities" : [
+         {"name" : "EqualPriority", "weight" : 1},
+         {"name" : "MostRequestedPriority", "weight" : 1},
+         {"name" : "RequestedToCapacityRatioPriority", "weight" : 1},
+         {"name" : "SelectorSpreadPriority", "weight" : 1},
+         {"name" : "ServiceSpreadingPriority", "weight" : 1},
+         {"name" : "InterPodAffinityPriority", "weight" : 1},
+         {"name" : "LeastRequestedPriority", "weight" : 1},
+         {"name" : "BalancedResourceAllocation", "weight" : 1},
+         {"name" : "NodePreferAvoidPodsPriority", "weight" : 1},
+         {"name" : "NodeAffinityPriority", "weight" : 1},
+         {"name" : "TaintTolerationPriority", "weight" : 1},
+         {"name" : "ImageLocalityPriority", "weight" : 1}
+       ],
+      "extenders" : [{
+        "urlPrefix": "http://localhost/scheduler",
+        "filterVerb": "predicates/preFilter",
+        "prioritizeVerb": "priorities/scoreFilter",
+        "weight": 10,
+        "enableHttps": false,
+        "nodeCacheCapable": false
+      }],
+      "hardPodAffinitySymmetricWeight" : 10
+    }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: my-scheduler
+  namespace: kube-system
+  labels:
+    app: my-scheduler
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: my-scheduler
+  template:
+    metadata:
+      labels:
+        app: my-scheduler
+    spec:
+      serviceAccountName: my-scheduler
+      volumes:
+        - name: my-scheduler-config
+          configMap:
+            name: my-scheduler-config
+      containers:
+        - name: my-scheduler-ctr
+          image: gcr.io/google_containers/hyperkube:v1.13.4
+          imagePullPolicy: IfNotPresent
+          args:
+            - kube-scheduler
+            - --config=/my-scheduler/config.yaml
+            - -v=4
+          volumeMounts:
+            - name: my-scheduler-config
+              mountPath: /my-scheduler
+        - name: my-scheduler-extender-ctr
+          # 自定义调度器-镜像
+          image: YOUR_ORG/YOUR_IMAGE:YOUR_TAG
+          imagePullPolicy: IfNotPresent
+          livenessProbe:
+            httpGet:
+              path: /version
+              port: 80
+          readinessProbe:
+            httpGet:
+              path: /version
+              port: 80
+          ports:
+            - containerPort: 80
+

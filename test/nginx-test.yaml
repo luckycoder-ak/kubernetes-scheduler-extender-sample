@@ -1,0 +1,29 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nginx
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: nginx
+  template:
+    metadata:
+      labels:
+        app: nginx
+    spec:
+      #此处指定调度器名称
+      schedulerName: my-scheduler
+      terminationGracePeriodSeconds: 5
+      containers:
+        - image: nginx:latest
+          imagePullPolicy: IfNotPresent
+          name: nginx
+          command: ["sleep", "3600"]
+          resources:
+            requests:
+              cpu: 1
+              memory: 1Gi
+            limits:
+              cpu: 1
+              memory: 1Gi
